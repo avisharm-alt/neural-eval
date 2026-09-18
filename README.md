@@ -1,29 +1,27 @@
 # neural-eval
 
-A leakage-resistant evaluation toolkit for EEG and neural-representation models.
+**Evaluation infrastructure for brain foundation models and neural representation learning.**
 
-The core question is simple: **does a model generalize to new people, or did the evaluation accidentally let subject identity leak across train and test?**
+`neural-eval` is an AI/ML toolkit for asking whether embeddings from EEG, MEG, fMRI, MRI, or multimodal neural encoders actually generalize to unseen people.
 
-This repository provides subject-held-out baselines, leakage diagnostics, confidence intervals, and permutation controls for trial-level neural data and learned embeddings.
+The central question is: **does a learned neural representation carry transferable task signal, or is downstream performance inflated by subject identity, preprocessing leakage, or an overpowered probe?**
 
-## Why this matters
+## AI/ML focus
 
-EEG, MEG, fMRI, and multimodal foundation-model papers often report trial-level performance on datasets where many observations come from the same participant. Randomly splitting rows can put the same subject in both train and test sets, producing optimistic estimates that do not answer the clinical generalization question.
+- **Foundation-model evaluation** — benchmark frozen embeddings from neural encoders and multimodal models
+- **Linear probing** — measure linearly accessible information in learned representations
+- **Nonlinear probing** — compare a small MLP probe against the linear baseline
+- **Subject-held-out generalization** — stratified group CV with hard subject-disjoint assertions
+- **Representation diagnostics** — effective rank, embedding norms, and cosine anisotropy
+- **Leakage detection** — duplicate-feature checks across train/test folds
+- **Statistical controls** — bootstrap confidence intervals and subject-level permutation tests
+- **Synthetic stress tests** — controllable task signal + subject fingerprint nuisance signal
 
-`neural-eval` makes the split contract explicit.
+## Why this matters for foundation models
 
-## Features
+A neural foundation model can produce impressive-looking downstream numbers without learning representations that transfer across patients. If the same subject appears in training and test trials, or if a high-capacity probe memorizes idiosyncratic features, reported performance can overstate generalization.
 
-- Subject-disjoint train/test validation
-- Stratified group cross-validation
-- Hard leakage assertions
-- Exact-feature duplicate checks across folds
-- Logistic-regression probe baseline
-- Balanced accuracy, ROC AUC, sensitivity, and specificity
-- Bootstrap confidence intervals
-- Subject-label permutation testing
-- Synthetic EEG-like embeddings with controllable subject signal
-- CLI that writes fold-level and aggregate results
+This repository makes the **evaluation contract** explicit.
 
 ## Install
 
@@ -35,15 +33,42 @@ source .venv/bin/activate
 pip install -e ".[dev]"
 ```
 
-## Quickstart
+## Quickstart: foundation-model embeddings
 
-Run a fully reproducible synthetic benchmark:
+Given one embedding per EEG trial or imaging sample:
+
+```python
+from neural_eval.foundation import evaluate_probe_suite
+from neural_eval.diagnostics import representation_diagnostics
+
+report = evaluate_probe_suite(
+    X=embeddings,
+    y=labels,
+    groups=subject_ids,
+    n_splits=5,
+    seed=11,
+)
+
+print(report)
+print(representation_diagnostics(embeddings))
+```
+
+The probe suite evaluates both:
+
+1. **Linear probe** — standardized logistic regression
+2. **MLP probe** — a compact nonlinear neural-network classifier
+
+A large nonlinear-over-linear gap suggests useful information may be present but not linearly organized. Strong performance from both probes under subject-held-out evaluation is a more meaningful result than random trial splitting.
+
+## CLI
+
+Synthetic benchmark:
 
 ```bash
 neural-eval demo --subjects 40 --trials 30 --features 64 --seed 11 --out results/demo
 ```
 
-Evaluate a CSV of embeddings:
+Evaluate exported model embeddings:
 
 ```bash
 neural-eval evaluate embeddings.csv \
@@ -54,41 +79,28 @@ neural-eval evaluate embeddings.csv \
   --out results/model
 ```
 
-## Expected tabular contract
+## Supported research workflows
 
-Each row is one observation/trial.
+The package is intended for embeddings from models such as:
 
-```text
-subject_id,diagnosis,emb_0,emb_1,...,emb_127
-s001,0,...
-s001,0,...
-s002,1,...
-```
+- EEG transformers
+- masked neural-signal encoders
+- multimodal EEG + MRI models
+- MRI foundation models
+- self-supervised neural encoders
+- clinical multimodal foundation models
 
-The grouping column is never used as a model feature. It is used only to enforce subject-disjoint evaluation.
+It does **not** claim that a specific foundation model is clinically valid. It provides the machinery needed to test stronger generalization claims.
 
-## Python API
+## Evaluation principles
 
-```python
-from neural_eval.synthetic import make_neural_embeddings
-from neural_eval.baseline import evaluate_grouped_probe
-
-X, y, groups = make_neural_embeddings(seed=11)
-result = evaluate_grouped_probe(X, y, groups, n_splits=5, seed=11)
-
-print(result.summary)
-print(result.folds)
-```
-
-## Evaluation philosophy
-
-1. **Split by biological unit, not row.**
-2. **Fit preprocessing inside each training fold.**
-3. **Report uncertainty, not only a point estimate.**
-4. **Run a null control.**
-5. **Treat leakage checks as assertions that can fail the run.**
-
-This is intentionally model-agnostic: use it on handcrafted EEG features, encoder embeddings, transformer representations, or multimodal features.
+1. Split by biological unit, never by arbitrary row.
+2. Fit all preprocessing inside the training fold.
+3. Compare simple and nonlinear probes.
+4. Audit representation geometry.
+5. Report uncertainty.
+6. Run a subject-level null.
+7. Treat leakage checks as assertions, not optional plots.
 
 ## License
 
